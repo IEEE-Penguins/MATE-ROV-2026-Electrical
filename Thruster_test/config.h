@@ -8,8 +8,8 @@
 #define ESC_2 16
 #define ESC_3 2
 #define ESC_4 4
-#define ESC_5 14
-#define ESC_6 33
+#define ESC_5 17
+#define ESC_6 5
 
 #define ESCs_CHANNELS_NUM 6
 

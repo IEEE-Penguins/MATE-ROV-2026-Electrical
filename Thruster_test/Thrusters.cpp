@@ -10,17 +10,22 @@ Thrusters::Thrusters()
     escs[5] = ESCChannel(ESC_6, ESC_STOP);
 }
 
-Thrusters::Thrusters(ESCChannel esc_channels[ESCs_CHANNELS_NUM])
+Thrusters::Thrusters(byte motor_pins[])
 {
     for (byte i = 0; i < ESCs_CHANNELS_NUM; i++)
-        escs[i] = esc_channels[i];
+        escs[i] = ESCChannel(motor_pins[i], ESC_STOP);
 }
 
 void Thrusters::drive(float speeds[ESCs_CHANNELS_NUM])
 {
     for (byte i = 0; i < ESCs_CHANNELS_NUM; i++)
     {
-        ESC_signals[i] = mapSpeed(speeds[i]);
+        ESC_signals[i] = map_speed(speeds[i]);
         escs[i].drive(ESC_signals[i]);
     }
+}
+
+void Thrusters::stopAll() {
+    for (byte i = 0; i < ESCs_CHANNELS_NUM; i++)
+        escs[i].stop();
 }

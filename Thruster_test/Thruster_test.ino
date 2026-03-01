@@ -17,7 +17,7 @@ void setup() {
 }
 
 void loop() {
-  for (byte i = 0; i < 7; i++) {
+  for (byte i = 0; i < 6; i++) {
     Serial.print("Motor "); Serial.print(i + 1); Serial.println(" is running");
     thrusterController.drive(speeds[i]);
     delay(3000);
