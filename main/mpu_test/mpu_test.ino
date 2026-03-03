@@ -87,30 +87,5 @@ void setup() {
 }
 
 void loop() {
-  // A. UPDATE MOTOR (Hardware PWM remains stable even if I2C lags)
-  Motor.drive(userSpeed);
 
-  // B. PROCESS SENSOR DATA (Only if MPU was found)
-  if (mpuReady) {
-    mpu6050.update();
-    
-    double dt = (double)(micros() - timer) / 1000000; 
-    timer = micros();
-
-    kalAngleX = kalmanX.getAngle(mpu6050.getAngleX(), mpu6050.getGyroX(), dt);
-    kalAngleY = kalmanY.getAngle(mpu6050.getAngleY(), mpu6050.getGyroY(), dt);
-
-    // Serial Plotter format
-    Serial.print("KalmanX:"); Serial.print(kalAngleX);
-    Serial.print("      ");
-    Serial.print("KalmanY:"); Serial.print(kalAngleY);
-    Serial.print("      ");
-  } else {
-    Serial.print("MPU_ERROR:0,");
-  }
-
-  Serial.print("MotorSpeed:"); Serial.println(userSpeed);
-  
-  // Minimal delay to prevent Serial overflow but keep Kalman loop fast
-  delay(2); 
 }

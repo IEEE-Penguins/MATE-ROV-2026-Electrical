@@ -18,6 +18,7 @@
 class MPU6050{
   public:
 
+  
   MPU6050(TwoWire &w);
   MPU6050(TwoWire &w, float aC, float gC);
 
