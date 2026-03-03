@@ -1,91 +1,38 @@
 #include <Wire.h>
-#include "ESC.h"
 #include "MPU.h"
 
-#define MOTOR_PIN 15 
-
-// --- Embedded Kalman Filter Class ---
-class MyKalman {
-public:
-    MyKalman() {
-        Q_angle = 0.001; Q_gyro = 0.003; R_measure = 0.03;
-        angle = 0; bias = 0;
-        P[0][0] = 0; P[0][1] = 0; P[1][0] = 0; P[1][1] = 0;
-    }
-    double getAngle(double newAngle, double newRate, double dt) {
-        double rate = newRate - bias;
-        angle += dt * rate;
-        P[0][0] += dt * (dt * P[1][1] - P[0][1] - P[1][0] + Q_angle);
-        P[0][1] -= dt * P[1][1];
-        P[1][0] -= dt * P[1][1];
-        P[1][1] += Q_gyro * dt;
-        double S = P[0][0] + R_measure;
-        double K[2];
-        K[0] = P[0][0] / S; K[1] = P[1][0] / S;
-        double y = newAngle - angle;
-        angle += K[0] * y; bias += K[1] * y;
-        double P00_temp = P[0][0]; double P01_temp = P[0][1];
-        P[0][0] -= K[0] * P00_temp; P[0][1] -= K[0] * P01_temp;
-        P[1][0] -= K[1] * P00_temp; P[1][1] -= K[1] * P01_temp;
-        return angle;
-    };
-    void setAngle(double a) { angle = a; };
-private:
-    double Q_angle, Q_gyro, R_measure;
-    double angle, bias;
-    double P[2][2];
-};
-
-// Objects
-ESCChannel Motor(MOTOR_PIN, ESC_STOP);
-MPU6050 mpu6050(Wire);
-MyKalman kalmanX; 
-MyKalman kalmanY;
-
-// Variables
-double kalAngleX, kalAngleY;
-uint32_t timer;
-int userSpeed = 1000;
-bool mpuReady = false;
+MPU6050 imu(Wire);
 
 void setup() {
-  Serial.begin(115200);
+    Serial.begin(115200);
 
-  // 1. ARM THE ESC IMMEDIATELY
-  Serial.println("ESC Armed with 1000us signal.");
+    Wire.begin(21, 22);
+    Wire.setClock(400000);
 
-  // 2. INITIALIZE I2C & MPU
-  Wire.begin(21, 22);
-  Wire.setClock(400000); // Fast I2C for Kalman
-  
-  Serial.println("Checking MPU6050...");
-  Wire.beginTransmission(0x68);
-  if (Wire.endTransmission() == 0) {
-    mpu6050.begin();
-    Serial.println("MPU found! Calibrating... DO NOT MOVE.");
-    mpu6050.calcGyroOffsets(true);
-    
-    // Set initial Kalman state
-    mpu6050.update();
-    kalmanX.setAngle(mpu6050.getAngleX()); 
-    kalmanY.setAngle(mpu6050.getAngleY());
-    mpuReady = true;
-  } else {
-    Serial.println("MPU NOT FOUND! Motor will run in 'Raw' mode.");
-  }
+    if (!imu.begin()) {
+        Serial.println("MPU6050 not detected.");
+        while (1);
+    }
 
-  // 3. GET USER SPEED
-  Serial.println("------------------------------------------");
-  Serial.println("ENTER MOTOR SPEED (1000-2000) AND PRESS ENTER:");
-  while (Serial.available() == 0) { delay(10); }
-  userSpeed = Serial.parseInt();
-  
-  Serial.print("Starting at speed: "); Serial.println(userSpeed);
-  
-  timer = micros();
-  Serial.println("SYSTEM STARTING...");
+    Serial.println("MPU6050 connected.");
+    Serial.println("Calibrating gyro... Keep IMU still.");
+    imu.calibrateGyro();
+    Serial.println("Calibration complete.");
 }
 
 void loop() {
 
+    imu.update();
+
+    Serial.print("Roll: ");
+    Serial.print(imu.roll(), 2);
+    Serial.print(" | Pitch: ");
+    Serial.print(imu.pitch(), 2);
+    Serial.print(" | Yaw: ");
+    Serial.print(imu.yaw(), 2);
+    Serial.print(" | Temp: ");
+    Serial.print(imu.temperature(), 2);
+    Serial.println(" C");
+
+    delay(10);
 }
