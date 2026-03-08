@@ -25,11 +25,11 @@ void setup() {
             delay(500);
         }
     }
-    
+
     #if ENABLE_STATUS_LED
         digitalWrite(STATUS_LED_PIN, HIGH);
     #endif
-    
+
     // Print cali info
     sensor.printCalibration();
     

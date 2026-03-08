@@ -1,5 +1,5 @@
 #include <Wire.h>
-#include "MPU.h"
+#include "mpu.h"
 
 MPU6050 imu(Wire);
 

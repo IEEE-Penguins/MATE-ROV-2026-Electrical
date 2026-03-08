@@ -1,4 +1,4 @@
-#include "MPU.h"
+#include "mpu.h"
 
 MPU6050::MPU6050(TwoWire &w) {
     wire = &w;
