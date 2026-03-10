@@ -12,7 +12,7 @@ ESCChannel Motor2(motor_bin_2, ESC_STOP);
 ESCChannel Motor3(motor_bin_3, ESC_STOP);
 ESCChannel Motor4(motor_bin_4, ESC_STOP);
 ESCChannel Motor5(motor_bin_5, ESC_STOP);
-ESCChannel Motor6(motor_bin_5, ESC_STOP);
+ESCChannel Motor6(motor_bin_6, ESC_STOP);
 
 void setup() {
   Serial.begin(115200);
