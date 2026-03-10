@@ -1,21 +1,21 @@
 #include <Wire.h>
 #include "depth.h"
-#include "MPU.h"   // Change to your actual MPU header name if needed
+#include "mpu.h"
 
 // =========================
 // App-level test config
 // =========================
-static constexpr uint32_t SERIAL_BAUD      = 115200;
-static constexpr uint32_t I2C_SPEED        = 100000;
-static constexpr uint8_t  I2C_SDA_PIN      = 21;
-static constexpr uint8_t  I2C_SCL_PIN      = 22;
-static constexpr uint32_t UPDATE_INTERVAL  = 500;
+static constexpr uint32_t SERIAL_BAUD     = 115200;
+static constexpr uint32_t I2C_SPEED       = 100000;
+static constexpr uint8_t  I2C_SDA_PIN     = 21;
+static constexpr uint8_t  I2C_SCL_PIN     = 22;
+static constexpr uint32_t UPDATE_INTERVAL = 500;
 
 // =========================
 // Shared I2C bus devices
 // =========================
 DepthSensor depthSensor(Wire);
-MPU6050 mpu(Wire);   // Adjust class name if your MPU class is named differently
+MPU6050 mpu(Wire);
 
 // =========================
 // Utility: I2C scan
@@ -47,16 +47,10 @@ void scanI2CBus(TwoWire &bus) {
     Serial.println();
 }
 
-// =========================
-// Utility: print section line
-// =========================
 void printDivider() {
     Serial.println("--------------------------------------------------");
 }
 
-// =========================
-// Setup
-// =========================
 void setup() {
     Serial.begin(SERIAL_BAUD);
     delay(500);
@@ -80,6 +74,12 @@ void setup() {
     Serial.print("MPU init:   ");
     Serial.println(mpuOk ? "OK" : "FAILED");
 
+    if (mpuOk) {
+        Serial.println("Calibrating MPU gyro... keep sensor still.");
+        mpu.calibrateGyro(500);
+        Serial.println("MPU gyro calibration done.");
+    }
+
     Serial.println();
 
     if (!depthOk || !mpuOk) {
@@ -92,12 +92,11 @@ void setup() {
     Serial.println();
 }
 
-// =========================
-// Loop
-// =========================
 void loop() {
     bool depthReadOk = depthSensor.update();
-    bool mpuReadOk   = mpu.update();
+
+    // MPU update is void in your implementation
+    mpu.update();
 
     printDivider();
 
@@ -117,6 +116,10 @@ void loop() {
     Serial.print(depthSensor.depthMeters(), 3);
     Serial.println(" m");
 
+    Serial.print("depth: ");
+    Serial.print(depthSensor.depthCentimeters(), 1);
+    Serial.println(" cm");
+
     Serial.print("status: ");
     Serial.println(DepthSensor::statusToString(depthSensor.status()));
 
@@ -124,17 +127,28 @@ void loop() {
 
     // ---- MPU ----
     Serial.println("[MPU]");
-    Serial.print("update(): ");
-    Serial.println(mpuReadOk ? "OK" : "FAILED");
+    Serial.println("update(): OK");
 
-    // These getter names are the only part you may need to adapt
-    // to your final MPU module API.
+    Serial.print("rawAccX: ");
+    Serial.print(mpu.rawAccX());
+    Serial.print("  rawAccY: ");
+    Serial.print(mpu.rawAccY());
+    Serial.print("  rawAccZ: ");
+    Serial.println(mpu.rawAccZ());
+
     Serial.print("accX: ");
     Serial.print(mpu.accX(), 3);
     Serial.print("  accY: ");
     Serial.print(mpu.accY(), 3);
     Serial.print("  accZ: ");
     Serial.println(mpu.accZ(), 3);
+
+    Serial.print("rawGyroX: ");
+    Serial.print(mpu.rawGyroX());
+    Serial.print("  rawGyroY: ");
+    Serial.print(mpu.rawGyroY());
+    Serial.print("  rawGyroZ: ");
+    Serial.println(mpu.rawGyroZ());
 
     Serial.print("gyroX: ");
     Serial.print(mpu.gyroX(), 3);
@@ -143,12 +157,25 @@ void loop() {
     Serial.print("  gyroZ: ");
     Serial.println(mpu.gyroZ(), 3);
 
+    Serial.print("rollAcc: ");
+    Serial.print(mpu.rollAcc(), 2);
+    Serial.print("  pitchAcc: ");
+    Serial.println(mpu.pitchAcc(), 2);
+
     Serial.print("roll: ");
     Serial.print(mpu.roll(), 2);
     Serial.print("  pitch: ");
     Serial.print(mpu.pitch(), 2);
     Serial.print("  yaw: ");
     Serial.println(mpu.yaw(), 2);
+
+    Serial.print("temp: ");
+    Serial.print(mpu.temperature(), 2);
+    Serial.println(" C");
+
+    Serial.print("dt: ");
+    Serial.print(mpu.dt(), 6);
+    Serial.println(" s");
 
     Serial.println();
 
