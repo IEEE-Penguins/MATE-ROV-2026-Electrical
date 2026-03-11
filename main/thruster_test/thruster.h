@@ -11,12 +11,12 @@
 */
 
 // Thruster pins
-static const uint8_t THRUSTER_1_PIN = 15;
+static const uint8_t THRUSTER_1_PIN = 4;
 static const uint8_t THRUSTER_2_PIN = 16;
 static const uint8_t THRUSTER_3_PIN = 2;
-static const uint8_t THRUSTER_4_PIN = 4;
-static const uint8_t THRUSTER_5_PIN = 14;
-static const uint8_t THRUSTER_6_PIN = 33;
+static const uint8_t THRUSTER_4_PIN = 17;
+static const uint8_t THRUSTER_5_PIN = 5;
+static const uint8_t THRUSTER_6_PIN = 23;
 
 static const uint8_t THRUSTER_COUNT = 6;
 
@@ -49,7 +49,7 @@ public:
         int16_t maxUs = ESC_US_MAX,
         uint8_t pwmHz = ESC_PWM_HZ
     );
-ESP32Servo
+
     bool begin();
     void arm(uint16_t armDelayMs = ESC_ARM_DELAY_MS);
     void writeMicroseconds(int16_t pulseUs);
