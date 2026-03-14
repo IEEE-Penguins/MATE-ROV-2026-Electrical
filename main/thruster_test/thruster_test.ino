@@ -143,7 +143,7 @@ void setup()
 
 void loop()
 {
-    testSingleThrusters();
+    // testSingleThrusters();
     testAllThrustersTogether();
-    testRawMicroseconds();
+    // testRawMicroseconds();
 }
