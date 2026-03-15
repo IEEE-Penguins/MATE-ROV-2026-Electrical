@@ -64,7 +64,7 @@ void testSingleThrusters()
         Serial.print("Testing thruster ");
         Serial.println(i + 1);
 
-        t->setNormalized(0.25f);
+        t->setNormalized(0.9f);
         printThrusterState("Forward low", *t, i);
         delay(2000);
 
@@ -72,7 +72,7 @@ void testSingleThrusters()
         printThrusterState("Stop", *t, i);
         delay(1500);
 
-        t->setNormalized(-0.25f);
+        t->setNormalized(-0.9f);
         printThrusterState("Reverse low", *t, i);
         delay(2000);
 
@@ -86,7 +86,7 @@ void testAllThrustersTogether()
 {
     Serial.println("\n=== All Thrusters Test ===");
 
-    float forwardCmds[THRUSTER_COUNT] = {0.30f, 0.30f, 0.30f, 0.30f, 0.30f, 0.30f};
+    float forwardCmds[THRUSTER_COUNT] = {0.9f, 0.9f, 0.9f, 0.9f, 0.9f, 0.9f};
     thrusters.setAll(forwardCmds, THRUSTER_COUNT);
     Serial.println("All thrusters forward 0.30");
     delay(3000);
