@@ -14,8 +14,8 @@ namespace ServoConfig
     static constexpr uint8_t POSITIONAL_SERVO_2_PIN = 33;
 
     // Continuous rotation servos
-    static constexpr uint8_t CONTINUOUS_SERVO_1_PIN = 16;
-    static constexpr uint8_t CONTINUOUS_SERVO_2_PIN = 17;
+    static constexpr uint8_t CONTINUOUS_SERVO_1_PIN = 25;
+    static constexpr uint8_t CONTINUOUS_SERVO_2_PIN = 26;
 
     static constexpr uint8_t POSITIONAL_SERVO_COUNT = 2;
     static constexpr uint8_t CONTINUOUS_SERVO_COUNT = 2;
