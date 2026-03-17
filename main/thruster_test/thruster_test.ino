@@ -95,7 +95,7 @@ void testAllThrustersTogether()
     Serial.println("All thrusters stop");
     delay(2000);
 
-    float reverseCmds[THRUSTER_COUNT] = {-0.30f, -0.30f, -0.30f, -0.30f, -0.30f, -0.30f};
+    float reverseCmds[THRUSTER_COUNT] = {-0.90f, -0.90f, -0.90f, -0.90f, -0.90f, -0.90f};
     thrusters.setAll(reverseCmds, THRUSTER_COUNT);
     Serial.println("All thrusters reverse -0.30");
     delay(3000);
