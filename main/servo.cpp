@@ -21,7 +21,9 @@ void ServoBase::begin()
 void ServoBase::attach()
 {
     if (attached)
+    {
         return;
+    }
 
     servo.setPeriodHertz(frequencyHz);
     servo.attach(pin, minPulseUs, maxPulseUs);
@@ -31,7 +33,9 @@ void ServoBase::attach()
 void ServoBase::detach()
 {
     if (!attached)
+    {
         return;
+    }
 
     servo.detach();
     attached = false;
@@ -55,6 +59,11 @@ void ServoBase::setFrequencyHz(int frequencyHz)
     {
         servo.setPeriodHertz(frequencyHz);
     }
+}
+
+int ServoBase::getFrequencyHz() const
+{
+    return frequencyHz;
 }
 
 int ServoBase::getLastPulseUs() const
