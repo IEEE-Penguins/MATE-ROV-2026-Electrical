@@ -19,14 +19,21 @@ static const unsigned long STARTUP_QUIET_MS      = 1500;
 // Thruster shared-signal rule
 // =====================================================
 // 6 physical thrusters, but one pair shares the same signal.
-// Current assumption: ESC[5] mirrors ESC[4].
+// ESC[5] mirrors ESC[4].
 static const uint8_t THRUSTER_SHARED_SOURCE_INDEX = 4;
 static const uint8_t THRUSTER_SHARED_MIRROR_INDEX = 5;
 
 // =====================================================
+// Protocol sizes
+// =====================================================
+static const uint8_t COMMAND_ESC_COUNT    = 6;
+static const uint8_t COMMAND_SERVO_COUNT  = 4;
+static const uint8_t COMMAND_LIGHTS_COUNT = 2;
+
+// =====================================================
 // JSON sizes
 // =====================================================
-static const size_t COMMAND_JSON_CAPACITY   = 256;
+static const size_t COMMAND_JSON_CAPACITY   = 384;
 static const size_t TELEMETRY_JSON_CAPACITY = 192;
 
 // =====================================================
@@ -56,6 +63,8 @@ bool thrustersReady = false;
 // =====================================================
 struct CommandState {
   float esc[THRUSTER_COUNT];
+  int8_t servo[COMMAND_SERVO_COUNT];
+  uint8_t lights[COMMAND_LIGHTS_COUNT];
   bool valid;
 };
 
@@ -80,10 +89,29 @@ static float clampNormalized(float value) {
   return value;
 }
 
+static int8_t clampServoCommand(int value) {
+  if (value < -1) return -1;
+  if (value >  1) return  1;
+  return static_cast<int8_t>(value);
+}
+
+static uint8_t clampLightCommand(int value) {
+  return (value != 0) ? 1 : 0;
+}
+
 static void resetCommandState(CommandState& state) {
   for (uint8_t i = 0; i < THRUSTER_COUNT; ++i) {
     state.esc[i] = 0.0f;
   }
+
+  for (uint8_t i = 0; i < COMMAND_SERVO_COUNT; ++i) {
+    state.servo[i] = 0;
+  }
+
+  for (uint8_t i = 0; i < COMMAND_LIGHTS_COUNT; ++i) {
+    state.lights[i] = 0;
+  }
+
   state.valid = false;
 }
 
@@ -101,7 +129,7 @@ static void stopThrusters() {
 }
 
 static void applyThrusters(const CommandState& state) {
-  if (!thrustersReady) {
+  if (!thrustersReady || !state.valid) {
     return;
   }
 
@@ -120,6 +148,10 @@ static void applyFailsafe() {
   stopThrusters();
 }
 
+static bool isNumericJson(JsonVariantConst v) {
+  return v.is<int>() || v.is<long>() || v.is<float>() || v.is<double>();
+}
+
 static bool parseCommandFrame(const char* line, CommandState& outState) {
   StaticJsonDocument<COMMAND_JSON_CAPACITY> doc;
   DeserializationError error = deserializeJson(doc, line);
@@ -132,25 +164,49 @@ static bool parseCommandFrame(const char* line, CommandState& outState) {
     return false;
   }
 
-  JsonObject data = doc["data"].as<JsonObject>();
+  JsonObjectConst data = doc["data"].as<JsonObjectConst>();
   if (data.isNull()) {
     return false;
   }
 
-  JsonArray escArray = data["esc"].as<JsonArray>();
-  if (escArray.isNull() || escArray.size() != THRUSTER_COUNT) {
+  JsonArrayConst escArray = data["esc"].as<JsonArrayConst>();
+  JsonArrayConst servoArray = data["servo"].as<JsonArrayConst>();
+  JsonArrayConst lightsArray = data["lights"].as<JsonArrayConst>();
+
+  if (escArray.isNull() || escArray.size() != COMMAND_ESC_COUNT) {
+    return false;
+  }
+
+  if (servoArray.isNull() || servoArray.size() != COMMAND_SERVO_COUNT) {
+    return false;
+  }
+
+  if (lightsArray.isNull() || lightsArray.size() != COMMAND_LIGHTS_COUNT) {
     return false;
   }
 
   CommandState parsed;
   resetCommandState(parsed);
 
-  for (uint8_t i = 0; i < THRUSTER_COUNT; ++i) {
-    if (!escArray[i].is<int>() && !escArray[i].is<long>() &&
-        !escArray[i].is<float>() && !escArray[i].is<double>()) {
+  for (uint8_t i = 0; i < COMMAND_ESC_COUNT; ++i) {
+    if (!isNumericJson(escArray[i])) {
       return false;
     }
     parsed.esc[i] = clampNormalized(escArray[i].as<float>());
+  }
+
+  for (uint8_t i = 0; i < COMMAND_SERVO_COUNT; ++i) {
+    if (!servoArray[i].is<int>() && !servoArray[i].is<long>()) {
+      return false;
+    }
+    parsed.servo[i] = clampServoCommand(servoArray[i].as<int>());
+  }
+
+  for (uint8_t i = 0; i < COMMAND_LIGHTS_COUNT; ++i) {
+    if (!lightsArray[i].is<int>() && !lightsArray[i].is<long>()) {
+      return false;
+    }
+    parsed.lights[i] = clampLightCommand(lightsArray[i].as<int>());
   }
 
   parsed.valid = true;
@@ -196,23 +252,30 @@ static void publishTelemetry() {
 
   out["type"] = "sensors";
   JsonObject data = out["data"].to<JsonObject>();
+
   data["depth"] = 0.0f;
 
   JsonObject mpu = data["mpu"].to<JsonObject>();
 
   JsonArray acc = mpu["acc"].to<JsonArray>();
-  acc.add(0.0f); acc.add(0.0f); acc.add(0.0f);
+  acc.add(0.0f);
+  acc.add(0.0f);
+  acc.add(0.0f);
 
   JsonArray gyro = mpu["gyro"].to<JsonArray>();
-  gyro.add(0.0f); gyro.add(0.0f); gyro.add(0.0f);
+  gyro.add(0.0f);
+  gyro.add(0.0f);
+  gyro.add(0.0f);
 
   JsonArray angle = mpu["angle"].to<JsonArray>();
-  angle.add(0.0f); angle.add(0.0f); angle.add(0.0f);
+  angle.add(0.0f);
+  angle.add(0.0f);
+  angle.add(0.0f);
 
   mpu["temp_in"] = 0.0f;
 
   serializeJson(out, Serial);
-  Serial.println();
+  Serial.write('\n');
 }
 
 static void beginThrusters() {
@@ -225,6 +288,7 @@ void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
 
   resetCommandState(commandState);
+
   rxIndex = 0;
   rxBuffer[0] = '\0';
 
