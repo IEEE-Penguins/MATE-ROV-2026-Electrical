@@ -2,80 +2,96 @@
 #include <Wire.h>
 #include <ArduinoJson.h>
 
-#include "mpu.h"
-#include "depth.h"
 #include "thruster.h"
 #include "servo.h"
+#include "mpu.h"
+#include "depth.h"
 
 // =====================================================
-// Serial protocol
+// Serial / protocol
 // =====================================================
-static const unsigned long SERIAL_BAUD_RATE = 115200;
-static const size_t RX_BUFFER_SIZE = 384;
+static const unsigned long SERIAL_BAUD_RATE = 460800;
+static const size_t RX_BUFFER_SIZE = 160;
+static const size_t TELEMETRY_JSON_CAPACITY = 320;
+
+// Incoming control format (one line, newline-terminated):
+// E,e1,e2,e3,e4,e5,e6,S,s1,s2,s3,s4,L,l1,l2
+//
+// Notes:
+// - Thrusters parse only the E section values.
+// - Servos parse only the S section values.
+// - Lights parse only the L section values.
+// - Outgoing telemetry remains JSON.
 
 // =====================================================
 // Timing
 // =====================================================
-static const unsigned long TELEMETRY_INTERVAL_MS   = 100;
-static const unsigned long COMMAND_TIMEOUT_MS      = 1000;
-static const unsigned long SERVO_STEP_INTERVAL_MS  = 20;
+static const unsigned long COMMAND_TIMEOUT_MS    = 1000;
+static const unsigned long TELEMETRY_INTERVAL_MS = 100;
+
+// =====================================================
+// I2C
+// =====================================================
+// Set USE_EXPLICIT_I2C_PINS to true only if your ESP32 board
+// needs manual SDA/SCL selection.
+static const bool USE_EXPLICIT_I2C_PINS = false;
+static const int I2C_SDA_PIN = 21;
+static const int I2C_SCL_PIN = 22;
 
 // =====================================================
 // Lights
 // =====================================================
-static const uint8_t LIGHT_PIN = 14;
+// User confirmed physical light output on GPIO 12.
+// Since command format still carries lights[2], this main turns the
+// single physical light ON if either L value is non-zero.
+static const uint8_t LIGHT_PIN = 12;
 
 // =====================================================
-// Thruster shared-signal assumption
+// Servo limits
 // =====================================================
-// There are 6 physical thrusters. Two share the same final signal.
-// Current assumption: ESC[5] mirrors ESC[4].
-static const uint8_t THRUSTER_SHARED_SOURCE_INDEX = 4;
-static const uint8_t THRUSTER_SHARED_MIRROR_INDEX = 5;
+static const float SERVO1_MIN_DEG  = 116.0f;
+static const float SERVO1_MAX_DEG  = 180.0f;
+static const float SERVO1_HOME_DEG = 116.0f;
+
+static const float SERVO2_MIN_DEG  = 0.0f;
+static const float SERVO2_MAX_DEG  = 180.0f;
+static const float SERVO2_HOME_DEG = 90.0f;
 
 // =====================================================
-// Servo behavior
+// Reordering hooks
 // =====================================================
-static const float SERVO_COMMAND_NEGATIVE = -1.0f;
-static const float SERVO_COMMAND_POSITIVE =  1.0f;
+// To change logical command order later, edit ONLY these mappings.
+// Example: if GUI esc[0] should drive physical thruster 4, set first
+// entry to 3.
+static const uint8_t THRUSTER_CMD_TO_PHYSICAL[THRUSTER_COUNT] = {0, 1, 2, 3, 4, 5};
+static const bool THRUSTER_INVERTED[THRUSTER_COUNT]           = {false, false, false, false, false, false};
 
-static const float POSITIONAL_SERVO_1_MIN_DEG  = 116.0f;
-static const float POSITIONAL_SERVO_1_MAX_DEG  = 180.0f;
-static const float POSITIONAL_SERVO_1_HOME_DEG = 148.0f;
-
-static const float POSITIONAL_SERVO_2_MIN_DEG  = ServoConfig::POSITIONAL_MIN_ANGLE_DEG;
-static const float POSITIONAL_SERVO_2_MAX_DEG  = ServoConfig::POSITIONAL_MAX_ANGLE_DEG;
-static const float POSITIONAL_SERVO_2_HOME_DEG = ServoConfig::POSITIONAL_HOME_ANGLE_DEG;
-
-static const float POSITIONAL_SERVO_STEP_DEG = 2.0f;
-static const float CONTINUOUS_SERVO_SPEED    = 1.0f;
+static const uint8_t SERVO_POS1_CMD_INDEX  = 0;
+static const uint8_t SERVO_POS2_CMD_INDEX  = 1;
+static const uint8_t SERVO_CONT1_CMD_INDEX = 2;
+static const uint8_t SERVO_CONT2_CMD_INDEX = 3;
 
 // =====================================================
-// JSON document sizes
-// =====================================================
-static const size_t COMMAND_JSON_CAPACITY   = 384;
-static const size_t TELEMETRY_JSON_CAPACITY = 512;
-
-// =====================================================
-// Sensor modules
+// Modules
 // =====================================================
 MPU6050 mpu(Wire);
 DepthSensor depthSensor(Wire);
 
-bool mpuReady   = false;
-bool depthReady = false;
+ThrusterConfig thrusterCfg1(THRUSTER_1_PIN, ESC_US_MIN, ESC_US_NEUTRAL, ESC_US_MAX, ESC_PWM_HZ, THRUSTER_DEFAULT_DEADBAND, THRUSTER_INVERTED[0]);
+ThrusterConfig thrusterCfg2(THRUSTER_2_PIN, ESC_US_MIN, ESC_US_NEUTRAL, ESC_US_MAX, ESC_PWM_HZ, THRUSTER_DEFAULT_DEADBAND, THRUSTER_INVERTED[1]);
+ThrusterConfig thrusterCfg3(THRUSTER_3_PIN, ESC_US_MIN, ESC_US_NEUTRAL, ESC_US_MAX, ESC_PWM_HZ, THRUSTER_DEFAULT_DEADBAND, THRUSTER_INVERTED[2]);
+ThrusterConfig thrusterCfg4(THRUSTER_4_PIN, ESC_US_MIN, ESC_US_NEUTRAL, ESC_US_MAX, ESC_PWM_HZ, THRUSTER_DEFAULT_DEADBAND, THRUSTER_INVERTED[3]);
+ThrusterConfig thrusterCfg5(THRUSTER_5_PIN, ESC_US_MIN, ESC_US_NEUTRAL, ESC_US_MAX, ESC_PWM_HZ, THRUSTER_DEFAULT_DEADBAND, THRUSTER_INVERTED[4]);
+ThrusterConfig thrusterCfg6(THRUSTER_6_PIN, ESC_US_MIN, ESC_US_NEUTRAL, ESC_US_MAX, ESC_PWM_HZ, THRUSTER_DEFAULT_DEADBAND, THRUSTER_INVERTED[5]);
 
-// =====================================================
-// Actuator modules
-// =====================================================
-Thruster gThruster1{ThrusterConfig(THRUSTER_1_PIN)};
-Thruster gThruster2{ThrusterConfig(THRUSTER_2_PIN)};
-Thruster gThruster3{ThrusterConfig(THRUSTER_3_PIN)};
-Thruster gThruster4{ThrusterConfig(THRUSTER_4_PIN)};
-Thruster gThruster5{ThrusterConfig(THRUSTER_5_PIN)};
-Thruster gThruster6{ThrusterConfig(THRUSTER_6_PIN)};
+Thruster gThruster1(thrusterCfg1);
+Thruster gThruster2(thrusterCfg2);
+Thruster gThruster3(thrusterCfg3);
+Thruster gThruster4(thrusterCfg4);
+Thruster gThruster5(thrusterCfg5);
+Thruster gThruster6(thrusterCfg6);
 
-Thruster* thrusterArray[THRUSTER_COUNT] = {
+Thruster* physicalThrusterArray[THRUSTER_COUNT] = {
   &gThruster1,
   &gThruster2,
   &gThruster3,
@@ -84,34 +100,60 @@ Thruster* thrusterArray[THRUSTER_COUNT] = {
   &gThruster6
 };
 
+Thruster* thrusterArray[THRUSTER_COUNT] = {
+  physicalThrusterArray[THRUSTER_CMD_TO_PHYSICAL[0]],
+  physicalThrusterArray[THRUSTER_CMD_TO_PHYSICAL[1]],
+  physicalThrusterArray[THRUSTER_CMD_TO_PHYSICAL[2]],
+  physicalThrusterArray[THRUSTER_CMD_TO_PHYSICAL[3]],
+  physicalThrusterArray[THRUSTER_CMD_TO_PHYSICAL[4]],
+  physicalThrusterArray[THRUSTER_CMD_TO_PHYSICAL[5]]
+};
+
 Thrusters thrusters(thrusterArray, THRUSTER_COUNT);
-
-PositionalServo positionalServo1(
-  ServoConfig::POSITIONAL_SERVO_1_PIN,
-  POSITIONAL_SERVO_1_MIN_DEG,
-  POSITIONAL_SERVO_1_MAX_DEG,
-  POSITIONAL_SERVO_1_HOME_DEG
-);
-
-PositionalServo positionalServo2(
-  ServoConfig::POSITIONAL_SERVO_2_PIN,
-  POSITIONAL_SERVO_2_MIN_DEG,
-  POSITIONAL_SERVO_2_MAX_DEG,
-  POSITIONAL_SERVO_2_HOME_DEG
-);
-
-ContinuousServo continuousServo1(ServoConfig::CONTINUOUS_SERVO_1_PIN);
-ContinuousServo continuousServo2(ServoConfig::CONTINUOUS_SERVO_2_PIN);
-
 bool thrustersReady = false;
-bool servosReady    = false;
+
+PositionalServo servo1(
+  ServoConfig::POSITIONAL_SERVO_1_PIN,
+  SERVO1_MIN_DEG,
+  SERVO1_MAX_DEG,
+  SERVO1_HOME_DEG,
+  ServoConfig::DEFAULT_MIN_PULSE_US,
+  ServoConfig::DEFAULT_MAX_PULSE_US
+);
+
+PositionalServo servo2(
+  ServoConfig::POSITIONAL_SERVO_2_PIN,
+  SERVO2_MIN_DEG,
+  SERVO2_MAX_DEG,
+  SERVO2_HOME_DEG,
+  ServoConfig::DEFAULT_MIN_PULSE_US,
+  ServoConfig::DEFAULT_MAX_PULSE_US
+);
+
+ContinuousServo servo3(
+  ServoConfig::CONTINUOUS_SERVO_1_PIN,
+  ServoConfig::CONTINUOUS_MIN_PULSE_US,
+  ServoConfig::CONTINUOUS_NEUTRAL_PULSE_US,
+  ServoConfig::CONTINUOUS_MAX_PULSE_US
+);
+
+ContinuousServo servo4(
+  ServoConfig::CONTINUOUS_SERVO_2_PIN,
+  ServoConfig::CONTINUOUS_MIN_PULSE_US,
+  ServoConfig::CONTINUOUS_NEUTRAL_PULSE_US,
+  ServoConfig::CONTINUOUS_MAX_PULSE_US
+);
+
+bool servosReady = false;
+bool mpuReady = false;
+bool depthReady = false;
 
 // =====================================================
 // Command state
 // =====================================================
 struct CommandState {
   float esc[THRUSTER_COUNT];
-  float servo[ServoConfig::TOTAL_SERVO_COUNT];
+  float servo[4];
   int lights[2];
   bool valid;
 };
@@ -123,65 +165,34 @@ CommandState commandState;
 // =====================================================
 char rxBuffer[RX_BUFFER_SIZE];
 size_t rxIndex = 0;
-
+unsigned long lastCommandMs = 0;
 unsigned long lastTelemetryMs = 0;
-unsigned long lastCommandMs   = 0;
-unsigned long lastServoStepMs = 0;
-
-// =====================================================
-// Telemetry cache
-// =====================================================
-float telemetryDepthMeters = 0.0f;
-float telemetryAcc[3]      = {0.0f, 0.0f, 0.0f};
-float telemetryGyro[3]     = {0.0f, 0.0f, 0.0f};
-float telemetryAngle[3]    = {0.0f, 0.0f, 0.0f};
-float telemetryTempIn      = 0.0f;
 
 // =====================================================
 // Helpers
 // =====================================================
-static float degToRad(float deg) {
-  return deg * PI / 180.0f;
-}
-
-static float gToMps2(float g) {
-  return g * 9.80665f;
-}
-
 static float clampNormalized(float value) {
   if (value < -1.0f) return -1.0f;
   if (value >  1.0f) return  1.0f;
   return value;
 }
 
-static int clampBinaryLikeInt(JsonVariant value) {
-  if (!value.is<int>() && !value.is<long>() && !value.is<float>() && !value.is<double>()) {
-    return 0;
-  }
-
-  const float v = value.as<float>();
-  if (v > 0.5f)  return 1;
-  if (v < -0.5f) return -1;
-  return 0;
+static float clampFloat(float value, float minValue, float maxValue) {
+  if (value < minValue) return minValue;
+  if (value > maxValue) return maxValue;
+  return value;
 }
 
-static float clampBinaryLikeFloat(JsonVariant value) {
-  if (!value.is<int>() && !value.is<long>() && !value.is<float>() && !value.is<double>()) {
-    return 0.0f;
-  }
-
-  const float v = value.as<float>();
-  if (v > 0.5f)  return 1.0f;
-  if (v < -0.5f) return -1.0f;
-  return 0.0f;
+static int clampLightValue(int value) {
+  return (value != 0) ? 1 : 0;
 }
 
-static void resetCommandState(CommandState &state) {
+static void resetCommandState(CommandState& state) {
   for (uint8_t i = 0; i < THRUSTER_COUNT; ++i) {
     state.esc[i] = 0.0f;
   }
 
-  for (uint8_t i = 0; i < ServoConfig::TOTAL_SERVO_COUNT; ++i) {
+  for (uint8_t i = 0; i < 4; ++i) {
     state.servo[i] = 0.0f;
   }
 
@@ -190,126 +201,81 @@ static void resetCommandState(CommandState &state) {
   state.valid = false;
 }
 
-static void applySharedThrusterRule(float esc[THRUSTER_COUNT]) {
-  if (THRUSTER_SHARED_SOURCE_INDEX < THRUSTER_COUNT &&
-      THRUSTER_SHARED_MIRROR_INDEX < THRUSTER_COUNT) {
-    esc[THRUSTER_SHARED_MIRROR_INDEX] = esc[THRUSTER_SHARED_SOURCE_INDEX];
+static void stopThrusters() {
+  if (thrustersReady) {
+    thrusters.stopAll();
   }
 }
 
-static void applyLights(const CommandState &state) {
-  const bool lightOn = (state.lights[0] != 0);
+static void moveToSafeServoState() {
+  if (!servosReady) {
+    return;
+  }
+
+  servo1.moveHome();
+  servo2.moveHome();
+  servo3.stop();
+  servo4.stop();
+}
+
+static void setLights(const CommandState& state) {
+  const bool lightOn = (state.lights[0] != 0) || (state.lights[1] != 0);
   digitalWrite(LIGHT_PIN, lightOn ? HIGH : LOW);
 }
 
-static void applyThrusters(const CommandState &state) {
-  if (!thrustersReady) {
+static void applyThrusters(const CommandState& state) {
+  if (!thrustersReady || !state.valid) {
     return;
   }
 
   float commands[THRUSTER_COUNT];
-
   for (uint8_t i = 0; i < THRUSTER_COUNT; ++i) {
     commands[i] = clampNormalized(state.esc[i]);
   }
 
-  applySharedThrusterRule(commands);
   thrusters.setAll(commands, THRUSTER_COUNT);
 }
 
-static void applyContinuousServos(const CommandState &state) {
-  if (!servosReady) {
+static void applyServos(const CommandState& state) {
+  if (!servosReady || !state.valid) {
     return;
   }
 
-  continuousServo1.setSpeed(clampNormalized(state.servo[2]) * CONTINUOUS_SERVO_SPEED);
-  continuousServo2.setSpeed(clampNormalized(state.servo[3]) * CONTINUOUS_SERVO_SPEED);
+  const float s1Angle = clampFloat(state.servo[SERVO_POS1_CMD_INDEX], SERVO1_MIN_DEG, SERVO1_MAX_DEG);
+  const float s2Angle = clampFloat(state.servo[SERVO_POS2_CMD_INDEX], SERVO2_MIN_DEG, SERVO2_MAX_DEG);
+  const float s3Speed = clampNormalized(state.servo[SERVO_CONT1_CMD_INDEX]);
+  const float s4Speed = clampNormalized(state.servo[SERVO_CONT2_CMD_INDEX]);
+
+  servo1.setAngle(s1Angle);
+  servo2.setAngle(s2Angle);
+  servo3.setSpeed(s3Speed);
+  servo4.setSpeed(s4Speed);
 }
 
-static void stepPositionalServo(PositionalServo &servo, float command) {
-  if (command >= SERVO_COMMAND_POSITIVE) {
-    servo.stepBy(POSITIONAL_SERVO_STEP_DEG);
-  } else if (command <= SERVO_COMMAND_NEGATIVE) {
-    servo.stepBy(-POSITIONAL_SERVO_STEP_DEG);
-  }
-}
-
-static void updatePositionalServos(const CommandState &state) {
-  if (!servosReady) {
-    return;
-  }
-
-  const unsigned long now = millis();
-  if ((now - lastServoStepMs) < SERVO_STEP_INTERVAL_MS) {
-    return;
-  }
-
-  lastServoStepMs = now;
-
-  stepPositionalServo(positionalServo1, state.servo[0]);
-  stepPositionalServo(positionalServo2, state.servo[1]);
-}
-
-static void applyCommandState() {
-  applyThrusters(commandState);
-  applyContinuousServos(commandState);
-  applyLights(commandState);
-}
-
-static void moveServosToSafeHome() {
-  if (!servosReady) {
-    return;
-  }
-
-  positionalServo1.moveHome();
-  positionalServo2.moveHome();
-  continuousServo1.stop();
-  continuousServo2.stop();
+static void applyCommand(const CommandState& state) {
+  applyThrusters(state);
+  applyServos(state);
+  setLights(state);
 }
 
 static void applyFailsafe() {
   resetCommandState(commandState);
   commandState.valid = true;
-
-  if (thrustersReady) {
-    thrusters.stopAll();
-  }
-
-  if (servosReady) {
-    moveServosToSafeHome();
-  }
-
+  stopThrusters();
+  moveToSafeServoState();
   digitalWrite(LIGHT_PIN, LOW);
 }
 
-static bool parseCommandFrame(const char *line, CommandState &outState) {
-  StaticJsonDocument<COMMAND_JSON_CAPACITY> doc;
-  DeserializationError error = deserializeJson(doc, line);
-  if (error) {
-    return false;
-  }
-
-  const char *type = doc["type"];
-  if (type == nullptr || strcmp(type, "command") != 0) {
-    return false;
-  }
-
-  JsonObject data = doc["data"].as<JsonObject>();
-  if (data.isNull()) {
-    return false;
-  }
-
-  JsonArray escArray    = data["esc"].as<JsonArray>();
-  JsonArray servoArray  = data["servo"].as<JsonArray>();
-  JsonArray lightsArray = data["lights"].as<JsonArray>();
-
-  if (escArray.isNull() || servoArray.isNull() || lightsArray.isNull()) {
-    return false;
-  }
-
-  if (escArray.size() != THRUSTER_COUNT ||
-      servoArray.size() != ServoConfig::TOTAL_SERVO_COUNT ||
-      lightsArray.size() != 2) {
+// Parse incoming control line:
+// E,e1,e2,e3,e4,e5,e6,S,s1,s2,s3,s4,L,l1,l2
+//
+// Required behavior:
+// - E section must exist and contain 6 values
+// - S section must exist and contain 4 values
+// - L section must exist and contain 2 values
+static bool parseCommandFrame(char* line, CommandState& outState) {
+  char* token = strtok(line, ",");
+  if (token == nullptr || strcmp(token, "E") != 0) {
     return false;
   }
 
@@ -317,86 +283,42 @@ static bool parseCommandFrame(const char *line, CommandState &outState) {
   resetCommandState(parsed);
 
   for (uint8_t i = 0; i < THRUSTER_COUNT; ++i) {
-    if (!escArray[i].is<int>() && !escArray[i].is<long>() &&
-        !escArray[i].is<float>() && !escArray[i].is<double>()) {
+    token = strtok(nullptr, ",");
+    if (token == nullptr) {
       return false;
     }
-    parsed.esc[i] = clampNormalized(escArray[i].as<float>());
+    parsed.esc[i] = clampNormalized(static_cast<float>(atof(token)));
   }
 
-  for (uint8_t i = 0; i < ServoConfig::TOTAL_SERVO_COUNT; ++i) {
-    parsed.servo[i] = clampBinaryLikeFloat(servoArray[i]);
+  token = strtok(nullptr, ",");
+  if (token == nullptr || strcmp(token, "S") != 0) {
+    return false;
   }
 
-  parsed.lights[0] = clampBinaryLikeInt(lightsArray[0]);
-  parsed.lights[1] = clampBinaryLikeInt(lightsArray[1]);
+  for (uint8_t i = 0; i < 4; ++i) {
+    token = strtok(nullptr, ",");
+    if (token == nullptr) {
+      return false;
+    }
+    parsed.servo[i] = static_cast<float>(atof(token));
+  }
+
+  token = strtok(nullptr, ",");
+  if (token == nullptr || strcmp(token, "L") != 0) {
+    return false;
+  }
+
+  for (uint8_t i = 0; i < 2; ++i) {
+    token = strtok(nullptr, ",");
+    if (token == nullptr) {
+      return false;
+    }
+    parsed.lights[i] = clampLightValue(atoi(token));
+  }
+
   parsed.valid = true;
-
   outState = parsed;
   return true;
-}
-
-static void updateTelemetryCache() {
-  telemetryDepthMeters = 0.0f;
-  telemetryAcc[0] = 0.0f; telemetryAcc[1] = 0.0f; telemetryAcc[2] = 0.0f;
-  telemetryGyro[0] = 0.0f; telemetryGyro[1] = 0.0f; telemetryGyro[2] = 0.0f;
-  telemetryAngle[0] = 0.0f; telemetryAngle[1] = 0.0f; telemetryAngle[2] = 0.0f;
-  telemetryTempIn = 0.0f;
-
-  if (depthReady) {
-    if (depthSensor.update()) {
-      telemetryDepthMeters = depthSensor.depthMeters();
-    }
-  }
-
-  if (mpuReady) {
-    mpu.update();
-
-    telemetryAcc[0] = gToMps2(mpu.accX());
-    telemetryAcc[1] = gToMps2(mpu.accY());
-    telemetryAcc[2] = gToMps2(mpu.accZ());
-
-    telemetryGyro[0] = degToRad(mpu.gyroX());
-    telemetryGyro[1] = degToRad(mpu.gyroY());
-    telemetryGyro[2] = degToRad(mpu.gyroZ());
-
-    telemetryAngle[0] = degToRad(mpu.roll());
-    telemetryAngle[1] = degToRad(mpu.pitch());
-    telemetryAngle[2] = degToRad(mpu.yaw());
-
-    telemetryTempIn = mpu.temperature();
-  }
-}
-
-static void publishTelemetry() {
-  StaticJsonDocument<TELEMETRY_JSON_CAPACITY> out;
-
-  out["type"] = "sensors";
-  JsonObject data = out["data"].to<JsonObject>();
-
-  data["depth"] = telemetryDepthMeters;
-
-  JsonObject mpuObj = data["mpu"].to<JsonObject>();
-
-  JsonArray acc = mpuObj["acc"].to<JsonArray>();
-  acc.add(telemetryAcc[0]);
-  acc.add(telemetryAcc[1]);
-  acc.add(telemetryAcc[2]);
-
-  JsonArray gyro = mpuObj["gyro"].to<JsonArray>();
-  gyro.add(telemetryGyro[0]);
-  gyro.add(telemetryGyro[1]);
-  gyro.add(telemetryGyro[2]);
-
-  JsonArray angle = mpuObj["angle"].to<JsonArray>();
-  angle.add(telemetryAngle[0]);
-  angle.add(telemetryAngle[1]);
-  angle.add(telemetryAngle[2]);
-
-  mpuObj["temp_in"] = telemetryTempIn;
-
-  serializeJson(out, Serial);
-  Serial.println();
 }
 
 static void processIncomingSerial() {
@@ -432,6 +354,61 @@ static void processIncomingSerial() {
   }
 }
 
+static void publishTelemetry(bool commandAlive) {
+  StaticJsonDocument<TELEMETRY_JSON_CAPACITY> out;
+
+  out["type"] = "sensors";
+  JsonObject data = out["data"].to<JsonObject>();
+
+  data["depth"] = depthReady ? depthSensor.depthMeters() : 0.0f;
+  data["depth_status"] = DepthSensor::statusToString(depthSensor.status());
+
+  JsonObject mpuObj = data["mpu"].to<JsonObject>();
+
+  JsonArray acc = mpuObj["acc"].to<JsonArray>();
+  if (mpuReady) {
+    acc.add(mpu.accX() * 9.80665f);
+    acc.add(mpu.accY() * 9.80665f);
+    acc.add(mpu.accZ() * 9.80665f);
+  } else {
+    acc.add(0.0f); acc.add(0.0f); acc.add(0.0f);
+  }
+
+  JsonArray gyro = mpuObj["gyro"].to<JsonArray>();
+  if (mpuReady) {
+    gyro.add(mpu.gyroX() * DEG_TO_RAD);
+    gyro.add(mpu.gyroY() * DEG_TO_RAD);
+    gyro.add(mpu.gyroZ() * DEG_TO_RAD);
+  } else {
+    gyro.add(0.0f); gyro.add(0.0f); gyro.add(0.0f);
+  }
+
+  JsonArray angle = mpuObj["angle"].to<JsonArray>();
+  if (mpuReady) {
+    angle.add(mpu.roll()  * DEG_TO_RAD);
+    angle.add(mpu.pitch() * DEG_TO_RAD);
+    angle.add(mpu.yaw()   * DEG_TO_RAD);
+  } else {
+    angle.add(0.0f); angle.add(0.0f); angle.add(0.0f);
+  }
+
+  mpuObj["temp_in"] = mpuReady ? mpu.temperature() : 0.0f;
+  mpuObj["ready"]   = mpuReady;
+
+  data["command_alive"] = commandAlive;
+
+  serializeJson(out, Serial);
+  Serial.println();
+}
+
+static void beginI2C() {
+  if (USE_EXPLICIT_I2C_PINS) {
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  } else {
+    Wire.begin();
+  }
+}
+
 static void beginThrusters() {
   thrusters.beginAll();
   thrusters.stopAll();
@@ -439,65 +416,63 @@ static void beginThrusters() {
 }
 
 static void beginServos() {
-  positionalServo1.begin();
-  positionalServo2.begin();
-  continuousServo1.begin();
-  continuousServo2.begin();
+  servo1.begin();
+  servo2.begin();
+  servo3.begin();
+  servo4.begin();
   servosReady = true;
-  moveServosToSafeHome();
+  moveToSafeServoState();
 }
 
-static void beginSensors() {
-  Wire.begin();
-
-  mpuReady = mpu.begin();
-  if (mpuReady) {
-    delay(50);
-    mpu.calibrateGyro(100);
-  }
-
-  depthReady = depthSensor.begin();
+static void beginLights() {
+  pinMode(LIGHT_PIN, OUTPUT);
+  digitalWrite(LIGHT_PIN, LOW);
 }
 
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
 
-  pinMode(LIGHT_PIN, OUTPUT);
-  digitalWrite(LIGHT_PIN, LOW);
-
   resetCommandState(commandState);
   rxIndex = 0;
   rxBuffer[0] = '\0';
 
-  beginSensors();
+  beginLights();
+  beginI2C();
+
+  mpuReady = mpu.begin();
+  depthReady = depthSensor.begin();
+
   beginThrusters();
   beginServos();
-
   applyFailsafe();
-  updateTelemetryCache();
 
-  const unsigned long now = millis();
-  lastCommandMs   = now;
-  lastTelemetryMs = now;
-  lastServoStepMs = now;
+  lastCommandMs = millis();
+  lastTelemetryMs = millis();
 }
 
 void loop() {
   processIncomingSerial();
 
-  const unsigned long now = millis();
+  if (mpuReady) {
+    mpu.update();
+  }
 
-  if ((now - lastCommandMs) > COMMAND_TIMEOUT_MS) {
+  if (depthReady) {
+    depthSensor.update();
+  }
+
+  const unsigned long now = millis();
+  const bool commandAlive = ((now - lastCommandMs) <= COMMAND_TIMEOUT_MS);
+
+  if (commandAlive) {
+    applyCommand(commandState);
+  } else {
     applyFailsafe();
     lastCommandMs = now;
-  } else {
-    applyCommandState();
-    updatePositionalServos(commandState);
   }
 
   if ((now - lastTelemetryMs) >= TELEMETRY_INTERVAL_MS) {
     lastTelemetryMs = now;
-    updateTelemetryCache();
-    publishTelemetry();
+    publishTelemetry(commandAlive);
   }
 }
