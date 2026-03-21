@@ -63,7 +63,7 @@ static const float SERVO2_HOME_DEG = 90.0f;
 // To change logical command order later, edit ONLY these mappings.
 // Example: if GUI esc[0] should drive physical thruster 4, set first
 // entry to 3.
-static const uint8_t THRUSTER_CMD_TO_PHYSICAL[THRUSTER_COUNT] = {0, 1, 2, 3, 4, 5};
+static const uint8_t THRUSTER_CMD_TO_PHYSICAL[THRUSTER_COUNT] = {0, 1, 2, 3, 4, 5}; // >>>>> Thrusters order
 static const bool THRUSTER_INVERTED[THRUSTER_COUNT]           = {false, false, false, false, false, false};
 
 static const uint8_t SERVO_POS1_CMD_INDEX  = 0;
