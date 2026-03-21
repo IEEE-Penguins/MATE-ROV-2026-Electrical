@@ -1,40 +1,16 @@
 #include <Arduino.h>
-#include <ArduinoJson.h>
 #include "thruster.h"
 
 // =====================================================
 // Serial
 // =====================================================
-static const unsigned long SERIAL_BAUD_RATE = 115200;
-static const size_t RX_BUFFER_SIZE = 256;
+static const unsigned long SERIAL_BAUD_RATE = 460800;
+static const size_t RX_BUFFER_SIZE = 160;
 
 // =====================================================
 // Timing
 // =====================================================
-static const unsigned long TELEMETRY_INTERVAL_MS = 100;
-static const unsigned long COMMAND_TIMEOUT_MS    = 1000;
-static const unsigned long STARTUP_QUIET_MS      = 1500;
-
-// =====================================================
-// Thruster shared-signal rule
-// =====================================================
-// 6 physical thrusters, but one pair shares the same signal.
-// ESC[5] mirrors ESC[4].
-static const uint8_t THRUSTER_SHARED_SOURCE_INDEX = 4;
-static const uint8_t THRUSTER_SHARED_MIRROR_INDEX = 5;
-
-// =====================================================
-// Protocol sizes
-// =====================================================
-static const uint8_t COMMAND_ESC_COUNT    = 6;
-static const uint8_t COMMAND_SERVO_COUNT  = 4;
-static const uint8_t COMMAND_LIGHTS_COUNT = 2;
-
-// =====================================================
-// JSON sizes
-// =====================================================
-static const size_t COMMAND_JSON_CAPACITY   = 384;
-static const size_t TELEMETRY_JSON_CAPACITY = 192;
+static const unsigned long COMMAND_TIMEOUT_MS = 1000;
 
 // =====================================================
 // Thruster objects
@@ -63,8 +39,6 @@ bool thrustersReady = false;
 // =====================================================
 struct CommandState {
   float esc[THRUSTER_COUNT];
-  int8_t servo[COMMAND_SERVO_COUNT];
-  uint8_t lights[COMMAND_LIGHTS_COUNT];
   bool valid;
 };
 
@@ -75,10 +49,7 @@ CommandState commandState;
 // =====================================================
 char rxBuffer[RX_BUFFER_SIZE];
 size_t rxIndex = 0;
-
-unsigned long bootMs          = 0;
-unsigned long lastTelemetryMs = 0;
-unsigned long lastCommandMs   = 0;
+unsigned long lastCommandMs = 0;
 
 // =====================================================
 // Helpers
@@ -89,37 +60,11 @@ static float clampNormalized(float value) {
   return value;
 }
 
-static int8_t clampServoCommand(int value) {
-  if (value < -1) return -1;
-  if (value >  1) return  1;
-  return static_cast<int8_t>(value);
-}
-
-static uint8_t clampLightCommand(int value) {
-  return (value != 0) ? 1 : 0;
-}
-
 static void resetCommandState(CommandState& state) {
   for (uint8_t i = 0; i < THRUSTER_COUNT; ++i) {
     state.esc[i] = 0.0f;
   }
-
-  for (uint8_t i = 0; i < COMMAND_SERVO_COUNT; ++i) {
-    state.servo[i] = 0;
-  }
-
-  for (uint8_t i = 0; i < COMMAND_LIGHTS_COUNT; ++i) {
-    state.lights[i] = 0;
-  }
-
   state.valid = false;
-}
-
-static void applySharedThrusterRule(float esc[THRUSTER_COUNT]) {
-  if (THRUSTER_SHARED_SOURCE_INDEX < THRUSTER_COUNT &&
-      THRUSTER_SHARED_MIRROR_INDEX < THRUSTER_COUNT) {
-    esc[THRUSTER_SHARED_MIRROR_INDEX] = esc[THRUSTER_SHARED_SOURCE_INDEX];
-  }
 }
 
 static void stopThrusters() {
@@ -138,7 +83,6 @@ static void applyThrusters(const CommandState& state) {
     commands[i] = clampNormalized(state.esc[i]);
   }
 
-  applySharedThrusterRule(commands);
   thrusters.setAll(commands, THRUSTER_COUNT);
 }
 
@@ -148,65 +92,25 @@ static void applyFailsafe() {
   stopThrusters();
 }
 
-static bool isNumericJson(JsonVariantConst v) {
-  return v.is<int>() || v.is<long>() || v.is<float>() || v.is<double>();
-}
-
-static bool parseCommandFrame(const char* line, CommandState& outState) {
-  StaticJsonDocument<COMMAND_JSON_CAPACITY> doc;
-  DeserializationError error = deserializeJson(doc, line);
-  if (error) {
-    return false;
-  }
-
-  const char* type = doc["type"];
-  if (type == nullptr || strcmp(type, "command") != 0) {
-    return false;
-  }
-
-  JsonObjectConst data = doc["data"].as<JsonObjectConst>();
-  if (data.isNull()) {
-    return false;
-  }
-
-  JsonArrayConst escArray = data["esc"].as<JsonArrayConst>();
-  JsonArrayConst servoArray = data["servo"].as<JsonArrayConst>();
-  JsonArrayConst lightsArray = data["lights"].as<JsonArrayConst>();
-
-  if (escArray.isNull() || escArray.size() != COMMAND_ESC_COUNT) {
-    return false;
-  }
-
-  if (servoArray.isNull() || servoArray.size() != COMMAND_SERVO_COUNT) {
-    return false;
-  }
-
-  if (lightsArray.isNull() || lightsArray.size() != COMMAND_LIGHTS_COUNT) {
+// Parse only the E section:
+// E,e1,e2,e3,e4,e5,e6
+// Anything after that is ignored.
+static bool parseCommandFrame(char* line, CommandState& outState) {
+  char* token = strtok(line, ",");
+  if (token == nullptr || strcmp(token, "E") != 0) {
     return false;
   }
 
   CommandState parsed;
   resetCommandState(parsed);
 
-  for (uint8_t i = 0; i < COMMAND_ESC_COUNT; ++i) {
-    if (!isNumericJson(escArray[i])) {
+  for (uint8_t i = 0; i < THRUSTER_COUNT; ++i) {
+    token = strtok(nullptr, ",");
+    if (token == nullptr) {
       return false;
     }
-    parsed.esc[i] = clampNormalized(escArray[i].as<float>());
-  }
 
-  for (uint8_t i = 0; i < COMMAND_SERVO_COUNT; ++i) {
-    if (!servoArray[i].is<int>() && !servoArray[i].is<long>()) {
-      return false;
-    }
-    parsed.servo[i] = clampServoCommand(servoArray[i].as<int>());
-  }
-
-  for (uint8_t i = 0; i < COMMAND_LIGHTS_COUNT; ++i) {
-    if (!lightsArray[i].is<int>() && !lightsArray[i].is<long>()) {
-      return false;
-    }
-    parsed.lights[i] = clampLightCommand(lightsArray[i].as<int>());
+    parsed.esc[i] = clampNormalized(static_cast<float>(atof(token)));
   }
 
   parsed.valid = true;
@@ -247,57 +151,26 @@ static void processIncomingSerial() {
   }
 }
 
-static void publishTelemetry() {
-  StaticJsonDocument<TELEMETRY_JSON_CAPACITY> out;
-
-  out["type"] = "sensors";
-  JsonObject data = out["data"].to<JsonObject>();
-
-  data["depth"] = 0.0f;
-
-  JsonObject mpu = data["mpu"].to<JsonObject>();
-
-  JsonArray acc = mpu["acc"].to<JsonArray>();
-  acc.add(0.0f);
-  acc.add(0.0f);
-  acc.add(0.0f);
-
-  JsonArray gyro = mpu["gyro"].to<JsonArray>();
-  gyro.add(0.0f);
-  gyro.add(0.0f);
-  gyro.add(0.0f);
-
-  JsonArray angle = mpu["angle"].to<JsonArray>();
-  angle.add(0.0f);
-  angle.add(0.0f);
-  angle.add(0.0f);
-
-  mpu["temp_in"] = 0.0f;
-
-  serializeJson(out, Serial);
-  Serial.write('\n');
-}
-
 static void beginThrusters() {
   thrusters.beginAll();
   thrusters.stopAll();
   thrustersReady = true;
 }
 
+// =====================================================
+// Arduino setup / loop
+// =====================================================
 void setup() {
   Serial.begin(SERIAL_BAUD_RATE);
 
   resetCommandState(commandState);
-
   rxIndex = 0;
   rxBuffer[0] = '\0';
 
   beginThrusters();
   applyFailsafe();
 
-  bootMs = millis();
-  lastCommandMs = bootMs;
-  lastTelemetryMs = bootMs;
+  lastCommandMs = millis();
 }
 
 void loop() {
@@ -310,11 +183,5 @@ void loop() {
     lastCommandMs = now;
   } else {
     applyThrusters(commandState);
-  }
-
-  if ((now - bootMs) >= STARTUP_QUIET_MS &&
-      (now - lastTelemetryMs) >= TELEMETRY_INTERVAL_MS) {
-    lastTelemetryMs = now;
-    publishTelemetry();
   }
 }

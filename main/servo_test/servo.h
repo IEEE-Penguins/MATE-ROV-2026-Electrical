@@ -10,8 +10,8 @@ namespace ServoConfig
     // Final servo pin map (servo module view)
     // =====================================================
     // Positional servos
-    static constexpr uint8_t POSITIONAL_SERVO_1_PIN = 32;
-    static constexpr uint8_t POSITIONAL_SERVO_2_PIN = 33;
+    static constexpr uint8_t POSITIONAL_SERVO_1_PIN = 32; // this one has range only from 116 degrees to 180 degrees, make sure not to exceed this range.
+    static constexpr uint8_t POSITIONAL_SERVO_2_PIN = 33; // range: 0-180
 
     // Continuous rotation servos
     static constexpr uint8_t CONTINUOUS_SERVO_1_PIN = 25;

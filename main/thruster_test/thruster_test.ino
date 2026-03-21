@@ -86,7 +86,7 @@ void testAllThrustersTogether()
 {
     Serial.println("\n=== All Thrusters Test ===");
 
-    float forwardCmds[THRUSTER_COUNT] = {0.9f, 0.9f, 0.9f, 0.9f, 0.9f, 0.9f};
+    float forwardCmds[THRUSTER_COUNT] = {0.6f, 0.6f, 0.6f, 0.6f, 0.6f, 0.6f};
     thrusters.setAll(forwardCmds, THRUSTER_COUNT);
     Serial.println("All thrusters forward 0.30");
     delay(3000);
@@ -95,7 +95,7 @@ void testAllThrustersTogether()
     Serial.println("All thrusters stop");
     delay(2000);
 
-    float reverseCmds[THRUSTER_COUNT] = {-0.90f, -0.90f, -0.90f, -0.90f, -0.90f, -0.90f};
+    float reverseCmds[THRUSTER_COUNT] = {-0.80f, -0.80f, -0.80f, -0.80f, -0.80f, -0.80f};
     thrusters.setAll(reverseCmds, THRUSTER_COUNT);
     Serial.println("All thrusters reverse -0.30");
     delay(3000);
@@ -143,7 +143,7 @@ void setup()
 
 void loop()
 {
-    // testSingleThrusters();
-    testAllThrustersTogether();
+    testSingleThrusters();
+    // testAllThrustersTogether();
     // testRawMicroseconds();
 }
