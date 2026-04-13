@@ -1,106 +1,3 @@
-// #include <WiFi.h>
-// #include <ESPmDNS.h>
-// #include <NetworkUdp.h>
-// #include <ArduinoOTA.h>
-// #include <WebServer.h>
-
-// #define DIR_PIN 5
-// #define STEP_PIN 18
-
-// float stepsPerRevolution = 200.0;
-// float stepAngle = 360.0 / stepsPerRevolution;
-
-// int currentPosition = 0; // بالـ steps
-
-// const char *ssid = "Abbas";
-// const char *password = "4112004hamdy";
-
-// WebServer server(80);
-
-// uint32_t last_ota_time = 0;
-// String receivedData = "";
-
-
-// void moveToAngle(float angle) {
-//   int targetSteps = angle / stepAngle;
-//   int stepsToMove = targetSteps - currentPosition;
-
-//   if (stepsToMove > 0) {
-//     digitalWrite(DIR_PIN, HIGH);
-//   } else {
-//     digitalWrite(DIR_PIN, LOW);
-//     stepsToMove = -stepsToMove;
-//   }
-
-//   for (int i = 0; i < stepsToMove; i++) {
-//     digitalWrite(STEP_PIN, HIGH);
-//     delayMicroseconds(2000);
-//     digitalWrite(STEP_PIN, LOW);
-//     delayMicroseconds(2000);
-//   }
-
-//   currentPosition = targetSteps;
-// }
-
-// void setup() {
-//   pinMode(2, OUTPUT);
-//   Serial.begin(115200);
-
-//   WiFi.begin(ssid, password);
-//   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-//     Serial.println("Connection Failed! Rebooting...");
-//     delay(5000);
-//     ESP.restart();
-//   }
-
-//   // ===== OTA =====
-//   ArduinoOTA.begin();
-
-//   // ===== WEB SERVER =====
-//   server.on("/", []() {
-//     String html = "<h2>ESP32 Web Serial 🔥</h2>";
-//     html += "<form action='/send'>";
-//     html += "<input name='data'>";
-//     html += "<input type='submit'>";
-//     html += "</form>";
-//     html += "<p>Last Data: " + receivedData + "</p>";
-//     server.send(200, "text/html", html);
-//   });
-
-//   server.on("/send", []() {
-//     receivedData = server.arg("data");
-//     Serial.println(receivedData); // زي السيريال
-//     server.sendHeader("Location", "/");
-//     server.send(303);
-//   });
-
-//   server.begin();
-
-//   Serial.println("Ready");
-//   Serial.println(WiFi.localIP());
-
-//   pinMode(STEP_PIN, OUTPUT);
-//   pinMode(DIR_PIN, OUTPUT);
-//   Serial.begin(115200);
-
-//   Serial.println("Enter angle:");
-// }
-
-// void loop() {
-//   ArduinoOTA.handle();
-//   server.handleClient();   // ❗ مهم جدًا
-
-//   if (Serial.available()) {
-//     float angle = Serial.parseFloat(); // اقرأ الزاوية
-
-//     Serial.print("Moving to: ");
-//     Serial.println(angle);
-
-//     moveToAngle(angle);
-//   }
-// }
-
-
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #include <WebServer.h>
@@ -111,7 +8,7 @@
 float stepsPerRevolution = 200.0;
 float stepAngle = 360.0 / stepsPerRevolution;
 
-int currentPosition = 0; // بالـ steps
+int currentPosition = 0;
 
 const char *ssid = "Abbas";
 const char *password = "4112004hamdy";
