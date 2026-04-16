@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "cppdbg",
+      "request": "launch",
+      "args": [],
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "cwd": "/run/user/1000/gvfs/sftp:host=192.168.1.100,user=penguins/home/penguins/rov/repo/MATE-ROV-2026-Electrical/main",
+      "program": "/run/user/1000/gvfs/sftp:host=192.168.1.100,user=penguins/home/penguins/rov/repo/MATE-ROV-2026-Electrical/main/build/Debug/outDebug",
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
+}

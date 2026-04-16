@@ -1,42 +1,43 @@
 #include <Arduino.h>
-#include <ESP32Servo.h>
+#include "servo.h"
 
-static const unsigned long SERIAL_BAUD_RATE = 460800;
-static const int SERVO_PIN = 33;
+// Use your module pin definition
+const uint8_t SERVO_PIN = ServoConfig::POSITIONAL_SERVO_1_PIN; // 32
 
-Servo testServo;
+// Create positional servo (full range)
+PositionalServo servo(
+  SERVO_PIN,
+  100.0f,   // min angle
+  180.0f, // max angle
+  90.0f   // home
+);
 
 void setup()
 {
-    Serial.begin(SERIAL_BAUD_RATE);
-    delay(1000);
+  Serial.begin(460800);
+  delay(1000);
 
-    testServo.setPeriodHertz(50);
-    testServo.attach(SERVO_PIN, 500, 2500);
+  Serial.println("=== Module Servo Serial Test ===");
 
-    Serial.println("Testing pin 33 directly");
+  servo.begin();       // attaches + moves to home
+  servo.setAngle(90);  // start centered
 
-    Serial.println("Move to 1500 us");
-    testServo.writeMicroseconds(1500);
-    delay(2000);
-
-    Serial.println("Move to 1000 us");
-    testServo.writeMicroseconds(1000);
-    delay(2000);
-
-    Serial.println("Move to 2000 us");
-    testServo.writeMicroseconds(2000);
-    delay(2000);
-
-    Serial.println("Move to 500 us");
-    testServo.writeMicroseconds(500);
-    delay(2000);
-
-    Serial.println("Move to 2500 us");
-    testServo.writeMicroseconds(2500);
-    delay(2000);
+  Serial.println("Enter angle (0 - 180):");
 }
 
 void loop()
 {
+  if (Serial.available())
+  {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+
+    float angle = input.toFloat();
+
+    // Send directly — module will clamp internally
+    servo.setAngle(angle);
+
+    Serial.print("Set angle: ");
+    Serial.println(angle);
+  }
 }
