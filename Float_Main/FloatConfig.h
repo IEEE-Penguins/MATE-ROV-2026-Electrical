@@ -33,7 +33,7 @@ constexpr uint8_t MAX_PROFILE_ATTEMPTS = 6;
 constexpr float DEEP_MIN_M = 2.27f;
 constexpr float DEEP_MAX_M = 2.83f;
 
-constexpr float SENSOR_TO_TOP_OFFSET_M = 0.85f;
+constexpr float SENSOR_TO_TOP_OFFSET_M = 0.65f;
 constexpr float TOP_SHALLOW_MIN_M = 0.07f;
 constexpr float TOP_SHALLOW_MAX_M = 0.73f;
 
