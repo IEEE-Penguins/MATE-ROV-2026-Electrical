@@ -16,7 +16,7 @@ static const uint8_t THRUSTER_2_PIN = 16;
 static const uint8_t THRUSTER_3_PIN = 2;
 static const uint8_t THRUSTER_4_PIN = 17;
 static const uint8_t THRUSTER_5_PIN = 5;
-static const uint8_t THRUSTER_6_PIN = 23;
+static const uint8_t THRUSTER_6_PIN = 15;
 
 static const uint8_t THRUSTER_COUNT = 6;
 

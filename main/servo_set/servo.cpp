@@ -116,7 +116,7 @@ PositionalServo::PositionalServo(uint8_t pin,
 void PositionalServo::begin()
 {
     ServoBase::begin();
-    // moveHome();
+    moveHome();
 }
 
 void PositionalServo::setAngle(float angleDeg)

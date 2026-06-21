@@ -26,7 +26,7 @@ static const size_t TELEMETRY_JSON_CAPACITY = 320;
 // =====================================================
 // Timing
 // =====================================================
-static const unsigned long COMMAND_TIMEOUT_MS = 3000;
+static const unsigned long COMMAND_TIMEOUT_MS = 20000;
 static const unsigned long TELEMETRY_INTERVAL_MS = 100;
 
 // If true, servos keep their last valid command when command stream times out.
@@ -53,18 +53,18 @@ static const uint8_t LIGHT_PIN = 12;
 // =====================================================
 // Servo limits
 // =====================================================
-static const float SERVO1_MIN_DEG = 116.0f; // calibrated safe minimum
+static const float SERVO1_MIN_DEG = 10.0f; // calibrated safe minimum
 static const float SERVO1_MAX_DEG = 180.0f;
-static const float SERVO1_HOME_DEG = 116.0f;
+static const float SERVO1_HOME_DEG = 180.0f;
 
 static const float SERVO2_MIN_DEG = 0.0f;
 static const float SERVO2_MAX_DEG = 180.0f;
-static const float SERVO2_HOME_DEG = 60.0f;
+static const float SERVO2_HOME_DEG = 90.0f;
 
 // Positional camera servo slew limiting (servo1 + servo2 only)
 // Move toward target in small steps for smoother motion and lower mechanical shock.
-static const float SERVO_POS_STEP_DEG = 1.0f;
-static const unsigned long SERVO_POS_STEP_INTERVAL_MS = 20;
+static const float SERVO_POS_STEP_DEG = 10.0f;
+static const unsigned long SERVO_POS_STEP_INTERVAL_MS = 50;
 
 // Continuous servo tuning
 // Use wide pulse range similar to standalone Servo.write(0..180) testing.
@@ -283,22 +283,34 @@ static void applyServos(const CommandState &state)
     return;
   }
 
-  const float s1Angle = mapNormalizedToAngle(state.servo[SERVO_POS1_CMD_INDEX], SERVO1_MIN_DEG, SERVO1_MAX_DEG);
-  const float s2Angle = mapNormalizedToAngle(state.servo[SERVO_POS2_CMD_INDEX], SERVO2_MIN_DEG, SERVO2_MAX_DEG);
+  const float s1Cmd = clampNormalized(state.servo[SERVO_POS1_CMD_INDEX]);
+  const float s2Cmd = clampNormalized(state.servo[SERVO_POS2_CMD_INDEX]);
   const float s3Speed = clampNormalized(state.servo[SERVO_CONT1_CMD_INDEX] * SERVO_CONT_COMMAND_GAIN);
   const float s4Speed = clampNormalized(state.servo[SERVO_CONT2_CMD_INDEX] * SERVO_CONT_COMMAND_GAIN);
 
   const unsigned long now = millis();
-  if ((now - lastPositionalServoStepMs) >= SERVO_POS_STEP_INTERVAL_MS)
-  {
-    lastPositionalServoStepMs = now;
+  // if ((now - lastPositionalServoStepMs) >= SERVO_POS_STEP_INTERVAL_MS)
+  // {
+  //   lastPositionalServoStepMs = now;
 
-    const float s1Delta = clampFloat(s1Angle - servo1.getAngle(), -SERVO_POS_STEP_DEG, SERVO_POS_STEP_DEG);
-    const float s2Delta = clampFloat(s2Angle - servo2.getAngle(), -SERVO_POS_STEP_DEG, SERVO_POS_STEP_DEG);
+  //   // if (s1Cmd > 0.01f)
+  //   // {
+  //   //   servo1.stepBy(SERVO_POS_STEP_DEG);
+  //   // }
+  //   // else if (s1Cmd < -0.01f)
+  //   // {
+  //   //   servo1.stepBy(-SERVO_POS_STEP_DEG);
+  //   // }
 
-    servo1.stepBy(s1Delta);
-    servo2.stepBy(s2Delta);
-  }
+  //   // if (s2Cmd > 0.01f)
+  //   // {
+  //   //   servo2.stepBy(SERVO_POS_STEP_DEG);
+  //   // }
+  //   // else if (s2Cmd < -0.01f)
+  //   // {
+  //   //   servo2.stepBy(-SERVO_POS_STEP_DEG);
+  //   // }
+  // }
 
   servo3.setSpeed(s3Speed);
   servo4.setSpeed(s4Speed);
@@ -314,7 +326,7 @@ static void applyCommand(const CommandState &state)
 static void applyFailsafe()
 {
   resetCommandState(commandState);
-  commandState.valid = true;
+  commandState.valid = false;
   stopThrusters();
   moveToSafeServoState();
   digitalWrite(LIGHT_PIN, LOW);
@@ -523,6 +535,8 @@ static void beginThrusters()
 static void beginServos()
 {
   servo1.begin();
+  // servo1.setAngle(155);
+  // delay(10000);
   servo2.begin();
   servo3.begin();
   servo4.begin();
