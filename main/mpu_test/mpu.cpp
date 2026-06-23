@@ -16,15 +16,16 @@ bool MPU6050::begin() {
     writeRegister(MPU6050_GYRO_CONFIG, 0x08);   // ±500 dps
     writeRegister(MPU6050_ACCEL_CONFIG, 0x00);  // ±2g
 
+    // QMC init is optional for system readiness: the MPU remains usable if MAG is absent.
+    _magReady = setupQMC();
+
     delay(100);
 
+    _prevMicros = micros();
     update();
 
     kalmanRoll.setAngle(_rollAcc);
     kalmanPitch.setAngle(_pitchAcc);
-
-    _yaw = 0;
-    _prevMicros = micros();
 
     return true;
 }
@@ -57,6 +58,10 @@ void MPU6050::update() {
     _dt = (now - _prevMicros) * 1e-6f;
     _prevMicros = now;
 
+    if (_dt <= 0.0f || _dt > 0.1f) {
+        _dt = 0.01f;
+    }
+
     readBurst();
 
     _accX = _rawAccX / 16384.0f;
@@ -76,7 +81,98 @@ void MPU6050::update() {
     _roll  = kalmanRoll.getAngle(_rollAcc, _gyroX, _dt);
     _pitch = kalmanPitch.getAngle(_pitchAcc, _gyroY, _dt);
 
-    _yaw += _gyroZ * _dt;
+    // Same public/output format: angle[2] still calls mpu.yaw().
+    // Internally, yaw now comes from tilt-compensated magnetic north when available.
+    if (_magReady && readQMC()) {
+        computeMagYaw();
+    } else {
+        // Fallback only. This preserves behavior if QMC is absent, but it will drift.
+        _yaw = wrapAngle180(_yaw + _gyroZ * _dt);
+    }
+}
+
+bool MPU6050::setupQMC() {
+    wire->beginTransmission(QMC5883_ADDR);
+    if (wire->endTransmission() != 0) {
+        return false;
+    }
+
+    wire->beginTransmission(QMC5883_ADDR);
+    wire->write(0x0B); // Reset period register
+    wire->write(0x80);
+    if (wire->endTransmission() != 0) {
+        return false;
+    }
+    delay(100);
+
+    wire->beginTransmission(QMC5883_ADDR);
+    wire->write(0x0B);
+    wire->write(0x08); // Start after reset
+    if (wire->endTransmission() != 0) {
+        return false;
+    }
+    delay(10);
+
+    wire->beginTransmission(QMC5883_ADDR);
+    wire->write(0x0A); // Control Register 1
+    wire->write(0x0D); // Imported from supplied reference module
+    if (wire->endTransmission() != 0) {
+        return false;
+    }
+    delay(100);
+
+    return true;
+}
+
+bool MPU6050::readQMC() {
+    wire->beginTransmission(QMC5883_ADDR);
+    wire->write(0x01); // First magnetometer output register in supplied reference module
+    if (wire->endTransmission(false) != 0) {
+        return false;
+    }
+
+    uint8_t bytesRead = wire->requestFrom(QMC5883_ADDR, static_cast<uint8_t>(6), static_cast<uint8_t>(true));
+    if (bytesRead < 6 || wire->available() < 6) {
+        return false;
+    }
+
+    // Register order imported from supplied reference module: Y, X, Z, little-endian.
+    int16_t rawY = wire->read() | (wire->read() << 8);
+    int16_t rawX = wire->read() | (wire->read() << 8);
+    int16_t rawZ = wire->read() | (wire->read() << 8);
+
+    _magX = (static_cast<float>(rawX) - _magOffsetX) * _magScaleX;
+    _magY = (static_cast<float>(rawY) - _magOffsetY) * _magScaleY;
+    _magZ = (static_cast<float>(rawZ) - _magOffsetZ) * _magScaleZ;
+
+    return true;
+}
+
+void MPU6050::computeMagYaw() {
+    float rollRad = _roll * DEG_TO_RAD;
+    float pitchRad = _pitch * DEG_TO_RAD;
+
+    // Tilt compensation imported from supplied reference module.
+    float magXComp = _magX * cos(pitchRad) + _magZ * sin(pitchRad);
+
+    float magYComp =
+        _magX * sin(rollRad) * sin(pitchRad) +
+        _magY * cos(rollRad) -
+        _magZ * sin(rollRad) * cos(pitchRad);
+
+    _yaw = wrapAngle180(atan2(-magYComp, magXComp) * RAD_TO_DEG);
+}
+
+float MPU6050::wrapAngle180(float angleDeg) {
+    while (angleDeg > 180.0f) {
+        angleDeg -= 360.0f;
+    }
+
+    while (angleDeg < -180.0f) {
+        angleDeg += 360.0f;
+    }
+
+    return angleDeg;
 }
 
 void MPU6050::calibrateGyro(uint16_t samples) {

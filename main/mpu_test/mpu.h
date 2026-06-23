@@ -12,6 +12,9 @@
 #define MPU6050_PWR_MGMT_1   0x6B
 #define MPU6050_WHO_AM_I     0x75
 
+// Magnetometer address used by the supplied combined MPU + MAG reference module.
+#define QMC5883_ADDR         0x2C
+
 class MPU6050 {
 public:
 
@@ -35,7 +38,7 @@ public:
     // Angles (degrees)
     float roll();        // Kalman filtered
     float pitch();       // Kalman filtered
-    float yaw();         // Integrated gyro Z
+    float yaw();         // Absolute magnetic yaw/heading, degrees
 
     float rollAcc();     // From accelerometer only
     float pitchAcc();    // From accelerometer only
@@ -46,6 +49,12 @@ private:
 
     void writeRegister(uint8_t reg, uint8_t data);
     void readBurst();
+
+    // Magnetometer helpers imported from the supplied reference module.
+    bool setupQMC();
+    bool readQMC();
+    void computeMagYaw();
+    static float wrapAngle180(float angleDeg);
 
     // Embedded Kalman Filter
     class Kalman {
@@ -75,6 +84,20 @@ private:
     float _gyroXoffset = 0;
     float _gyroYoffset = 0;
     float _gyroZoffset = 0;
+
+    // Magnetometer state/calibration.
+    bool _magReady = false;
+    float _magX = 0.0f;
+    float _magY = 0.0f;
+    float _magZ = 0.0f;
+
+    float _magOffsetX = 267.50f;
+    float _magOffsetY = 222.00f;
+    float _magOffsetZ = 200.50f;
+
+    float _magScaleX = 1.053206f;
+    float _magScaleY = 1.000000f;
+    float _magScaleZ = 0.951911f;
 
     // Angles
     float _rollAcc, _pitchAcc;
